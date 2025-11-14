@@ -17,12 +17,13 @@
     .grid{display:grid;grid-template-columns:360px 1fr;gap:18px}
     .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(3,7,18,0.6)}
     label{font-size:13px;color:#bcd5df}
-    input[type=text],textarea,select{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit}
+    input[type=text],textarea,select,input[type=file]{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit}
     textarea{min-height:120px;resize:vertical}
     button{background:var(--accent);border:none;color:#052022;padding:10px 12px;border-radius:10px;font-weight:600;cursor:pointer}
     .muted{color:#92a9b9;font-size:13px}
     .posts{display:flex;flex-direction:column;gap:12px}
     .post{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+    .post-image{width:100%;height:auto;border-radius:8px;margin-bottom:12px}
     .post .meta{display:flex;justify-content:space-between;gap:8px;align-items:center}
     .post .content{white-space:pre-wrap;margin-top:10px;font-family:inherit}
     .actions{display:flex;gap:8px;margin-top:10px}
@@ -42,7 +43,7 @@
         <p class="lead">منصة بسيطة لنشر ومشاركة البرومبتات — أنشر، انسخ، وجرّب</p>
       </div>
     </div>
-    <div class="muted">محليًا محفوظ في متصفحك · للتشغيل زمنياً أو النشر استخدم GitHub Pages أو Firebase</div>
+    <div class="muted">البيانات محفوظة الآن في قاعدة بيانات Firebase Firestore المشتركة.</div>
   </header>
 
   <main>
@@ -62,6 +63,9 @@
         <label>وسم/تصنيف (اختياري)</label>
         <input id="tag" type="text" placeholder="مثال: محادثة، صورة، ترجمة" />
 
+        <label>صورة (اختياري)</label>
+        <input id="imageFile" type="file" accept="image/*" />
+
         <div style="height:12px"></div>
         <div style="display:flex;gap:8px">
           <button id="publishBtn">نشر</button>
@@ -79,11 +83,6 @@
               <input id="searchInput" type="text" placeholder="ابحث في العناوين أو النص أو الوسوم" />
               <select id="filterTag"><option value="">تصفية حسب الوسم</option></select>
             </div>
-            <div style="display:flex;gap:8px;align-items:center">
-              <button id="exportBtn" style="background:#2b6cb0">تصدير JSON</button>
-              <button id="importBtn" style="background:#1f2937">استيراد</button>
-              <input id="importFile" type="file" accept="application/json" style="display:none" />
-            </div>
           </div>
 
           <div id="postsContainer" class="posts"></div>
@@ -92,117 +91,224 @@
 
         <div style="height:12px"></div>
         <div class="card" style="padding:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <div class="chip">محفوظ في: localStorage</div>
+          <div class="chip">محفوظ في: Firebase Firestore</div>
           <div class="chip">عدد البرومبتات: <span id="count">0</span></div>
-          <div class="chip">نسخة احتياطية: استخدم زر تصدير</div>
+          <div class="chip">الحالة: متصل</div>
         </div>
       </section>
     </div>
   </main>
 
   <footer>
-    تمّ التصميم بواسطة "يوسف" — يمكنك حفظ الملف كـ index.html ثم فتحه في متصفحك. للمساعدة في النشر: اطلب مني خطوات نشر على GitHub Pages أو Firebase.
+    تمّ التصميم بواسطة "يوسف" — الموقع منشور عبر GitHub Pages ومتصل بـ Firebase Firestore.
   </footer>
 
-  <script>
-    // بسيط: إدارة منشورات البرومبت في localStorage
-    const STORAGE_KEY = 'yousef_prompts_v1';
-    let posts = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script> <script>
+  // /////////////////////////////////////////////////////////////
+  // // محتوى وسم <script> بالكامل بعد الدمج //
+  // /////////////////////////////////////////////////////////////
 
-    const el = id => document.getElementById(id);
-    const render = () => {
-      const container = el('postsContainer');
-      container.innerHTML = '';
-      const filter = el('filterTag').value.trim();
-      const q = el('searchInput').value.trim().toLowerCase();
-      const visible = posts.filter(p => {
-        if(filter && p.tag !== filter) return false;
-        if(!q) return true;
-        return (p.title||'').toLowerCase().includes(q) || p.prompt.toLowerCase().includes(q) || (p.author||'').toLowerCase().includes(q) || (p.tag||'').toLowerCase().includes(q);
-      }).sort((a,b)=>b.createdAt - a.createdAt);
+  // 1. مفاتيح إعدادات Firebase الخاصة بك
+  const firebaseConfig = {
+      // المفاتيح التي نسختها من صورتك
+      apiKey: "AIzaSyP016himjW1TiccHc0SiByPjOW0Vzv_Vs",
+      authDomain: "yousefprompts-public-58082.firebaseapp.com",
+      projectId: "yousefprompts-public-58082",
+      storageBucket: "yousefprompts-public-58082.appspot.com",
+      messagingSenderId: "1029355842188",
+      appId: "1:1029355842188:web:b72df7144a0027c2e6da39",
+      measurementId: "G-JY7D5F10YT"
+  };
 
-      if(visible.length===0){ el('emptyState').style.display='block'; } else { el('emptyState').style.display='none'; }
+  // 2. تهيئة التطبيق وقاعدة البيانات وخدمة التخزين
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const storage = firebase.storage(); // ✨ تهيئة التخزين
+  const PROMPTS_COLLECTION = 'prompts'; // اسم المجموعة
 
-      visible.forEach(p=>{
-        const div = document.createElement('div'); div.className='post';
-        div.innerHTML = `
-          <div class="meta">
-            <div>
-              <strong>${escapeHtml(p.title || 'بدون عنوان')}</strong>
-              <div class="muted">${escapeHtml(p.author || 'مجهول')} · ${new Date(p.createdAt).toLocaleString('ar-EG')}</div>
-            </div>
-            <div style="text-align:left;min-width:140px">
-              <span class="chip">${escapeHtml(p.tag||'عام')}</span>
-            </div>
-          </div>
-          <div class="content">${escapeHtml(p.prompt)}</div>
-          <div class="actions">
-            <button onclick='copyPrompt("${p.id}")'>نسخ</button>
-            <button onclick='toggleLike("${p.id}")'>${p.likes||0} ❤️</button>
-            <button onclick='editPrompt("${p.id}")' style="background:#f97316">تعديل</button>
-            <button onclick='deletePrompt("${p.id}")' style="background:#ef4444">حذف</button>
-          </div>
-        `;
-        container.appendChild(div);
+  const el = id => document.getElementById(id);
+
+  function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+
+  // 3. وظيفة العرض (render) الجديدة (مع دعم الصور)
+  const render = async () => { 
+    const container = el('postsContainer');
+    container.innerHTML = '';
+    
+    let query = db.collection(PROMPTS_COLLECTION).orderBy('createdAt', 'desc');
+
+    const filter = el('filterTag').value.trim();
+    const q = el('searchInput').value.trim().toLowerCase();
+
+    let visible = [];
+    try {
+      const snapshot = await query.get();
+      snapshot.forEach(doc => {
+          const p = { id: doc.id, ...doc.data() }; 
+
+          // تطبيق البحث والتصفية
+          if(filter && p.tag !== filter) return;
+          if(q && !((p.title||'').toLowerCase().includes(q) || p.prompt.toLowerCase().includes(q) || (p.author||'').toLowerCase().includes(q) || (p.tag||'').toLowerCase().includes(q))) return;
+
+          visible.push(p);
       });
+    } catch (e) {
+        console.error("خطأ في جلب البيانات:", e);
+        return;
+    }
+    
 
-      el('count').innerText = posts.length;
-      refreshFilterOptions();
+    if(visible.length===0){ el('emptyState').style.display='block'; } else { el('emptyState').style.display='none'; }
+    el('count').innerText = visible.length;
+    
+    visible.forEach(p=>{
+      const div = document.createElement('div'); div.className='post';
+      
+      const displayDate = p.createdAt && p.createdAt.toDate ? p.createdAt.toDate().toLocaleString('ar-EG') : 'الآن';
+      
+      // ✨ كود عرض الصورة
+      const imageHtml = p.imageUrl ? `<img src="${escapeHtml(p.imageUrl)}" class="post-image" alt="${escapeHtml(p.title || 'صورة')}">` : '';
+
+      div.innerHTML = `
+        ${imageHtml} <div class="meta">
+          <div>
+            <strong>${escapeHtml(p.title || 'بدون عنوان')}</strong>
+            <div class="muted">${escapeHtml(p.author || 'مجهول')} · ${displayDate}</div>
+          </div>
+          <div style="text-align:left;min-width:140px">
+            <span class="chip">${escapeHtml(p.tag||'عام')}</span>
+          </div>
+        </div>
+        <div class="content">${escapeHtml(p.prompt)}</div>
+        <div class="actions">
+          <button onclick='copyPrompt("${p.id}")'>نسخ</button>
+          <button onclick='toggleLike("${p.id}")'>${p.likes||0} ❤️</button>
+          <button onclick='editPrompt("${p.id}")' style="background:#f97316">تعديل</button>
+          <button onclick='deletePrompt("${p.id}")' style="background:#ef4444">حذف</button>
+        </div>
+      `;
+      container.appendChild(div);
+    });
+
+    refreshFilterOptions(visible.map(p=>p.tag).filter(Boolean));
+  }
+
+
+  // 4. تعديل وظيفة النشر (Publish) لدعم رفع الصور
+  document.getElementById('publishBtn').addEventListener('click', async ()=>{
+    const prompt = el('prompt').value.trim(); if(!prompt){ alert('اكتب نص البرومت قبل النشر.'); return; }
+    
+    const imageFile = el('imageFile').files[0]; // الحصول على ملف الصورة
+
+    let imageUrl = ''; // متغير لحفظ رابط الصورة
+    
+    if (imageFile) {
+      const imageName = Date.now() + '_' + imageFile.name; 
+      const fileRef = storage.ref().child('images/' + imageName);
+      
+      try {
+        await fileRef.put(imageFile); // عملية الرفع
+        imageUrl = await fileRef.getDownloadURL(); // الحصول على الرابط العام
+        
+      } catch (e) {
+        console.error("خطأ في رفع الصورة: ", e);
+        alert('حدث خطأ أثناء رفع الصورة. سيتم نشر البرومت بدون صورة.');
+      }
     }
 
-    function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    // حفظ البيانات النصية مع رابط الصورة
+    const postData = {
+      title: el('title').value.trim(),
+      author: el('author').value.trim(),
+      tag: el('tag').value.trim(),
+      prompt: prompt,
+      imageUrl: imageUrl, // ✨ إضافة رابط الصورة هنا
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(), 
+      likes: 0
+    };
+    
+    try {
+      await db.collection(PROMPTS_COLLECTION).add(postData);
+      alert('تم نشر البرومت بنجاح!');
+      el('title').value=''; el('prompt').value=''; el('tag').value=''; el('imageFile').value=''; // مسح حقل الصورة
+      render(); 
+    } catch (e) {
+      console.error("خطأ في إضافة الوثيقة: ", e);
+      alert('حدث خطأ أثناء النشر.');
+    }
+  });
 
-    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(posts)); render(); }
+  el('clearBtn').addEventListener('click', ()=>{ el('title').value=''; el('prompt').value=''; el('tag').value=''; el('author').value=''; el('imageFile').value=''; });
 
-    function uid(){ return 'id_'+Math.random().toString(36).slice(2,9); }
+  // 5. تعديل وظائف التفاعل (الحذف، الإعجاب، التعديل) لاستخدام Firestore
+  function copyPrompt(id){ 
+      db.collection(PROMPTS_COLLECTION).doc(id).get().then(doc => {
+          if (doc.exists) {
+              navigator.clipboard.writeText(doc.data().prompt).then(()=>{ alert('نُسخ النص إلى الحافظة!'); }); 
+          }
+      });
+  }
 
-    document.getElementById('publishBtn').addEventListener('click', ()=>{
-      const prompt = el('prompt').value.trim(); if(!prompt){ alert('اكتب نص البرومت قبل النشر.'); return; }
-      const post = {
-        id: uid(),
-        title: el('title').value.trim(),
-        author: el('author').value.trim(),
-        tag: el('tag').value.trim(),
-        prompt: prompt,
-        createdAt: Date.now(),
-        likes: 0
-      };
-      posts.push(post); save(); // نظيف: افراغ الحقول
-      el('title').value=''; el('prompt').value=''; el('tag').value='';
-    });
+  async function deletePrompt(id){ 
+    if(!confirm('هل تريد حذف هذا البرومت؟')) return; 
+    try {
+      await db.collection(PROMPTS_COLLECTION).doc(id).delete();
+      render(); 
+    } catch(e) {
+      alert('حدث خطأ في الحذف.');
+    }
+  }
 
-    el('clearBtn').addEventListener('click', ()=>{ el('title').value=''; el('prompt').value=''; el('tag').value=''; el('author').value=''; });
+  async function editPrompt(id){ 
+      const currentDoc = await db.collection(PROMPTS_COLLECTION).doc(id).get();
+      if (!currentDoc.exists) return;
+      const p = currentDoc.data();
+      
+      const newText = prompt('حرر نص البرومت:', p.prompt); 
+      if(newText===null) return; 
+      
+      const newTitle = prompt('غير العنوان (اترك فارغًا للإبقاء):', p.title) || p.title;
 
-    function copyPrompt(id){ const p = posts.find(x=>x.id===id); if(!p) return; navigator.clipboard.writeText(p.prompt).then(()=>{ alert('نُسخ النص إلى الحافظة!'); }); }
+      try {
+          await db.collection(PROMPTS_COLLECTION).doc(id).update({
+              prompt: newText,
+              title: newTitle
+          });
+          render();
+      } catch(e) {
+          alert('حدث خطأ في التعديل.');
+      }
+  }
 
-    function deletePrompt(id){ if(!confirm('هل تريد حذف هذا البرومت؟')) return; posts = posts.filter(x=>x.id!==id); save(); }
+  async function toggleLike(id){ 
+      try {
+          const docRef = db.collection(PROMPTS_COLLECTION).doc(id);
+          // زيادة العدد في قاعدة البيانات
+          await docRef.update({ 
+              likes: firebase.firestore.FieldValue.increment(1) 
+          });
+          render();
+      } catch(e) {
+          alert('حدث خطأ في الإعجاب.');
+      }
+  }
 
-    function editPrompt(id){ const p = posts.find(x=>x.id===id); if(!p) return; const newText = prompt('حرر نص البرومت:', p.prompt); if(newText===null) return; p.prompt = newText; p.title = prompt('غير العنوان (اترك فارغًا للإبقاء):', p.title) || p.title; save(); }
+  function refreshFilterOptions(tags){ 
+    const select = el('filterTag'); 
+    const uniqueTags = Array.from(new Set(tags));
+    const old = select.value; 
+    select.innerHTML = '<option value="">تصفية حسب الوسم</option>' + uniqueTags.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join(''); 
+    if(uniqueTags.includes(old)) select.value = old; 
+  }
 
-    function toggleLike(id){ const p = posts.find(x=>x.id===id); if(!p) return; p.likes = (p.likes||0) + 1; save(); }
+  el('filterTag').addEventListener('change', render);
+  el('searchInput').addEventListener('input', render);
 
-    function refreshFilterOptions(){ const select = el('filterTag'); const tags = Array.from(new Set(posts.map(p=>p.tag).filter(Boolean))); const old = select.value; select.innerHTML = '<option value="">تصفية حسب الوسم</option>' + tags.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join(''); if(tags.includes(old)) select.value = old; }
-
-    el('filterTag').addEventListener('change', render);
-    el('searchInput').addEventListener('input', render);
-
-    // تصدير واستيراد
-    el('exportBtn').addEventListener('click', ()=>{
-      const data = JSON.stringify(posts, null, 2);
-      const blob = new Blob([data],{type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href=url; a.download='yousef_prompts_backup.json'; a.click(); URL.revokeObjectURL(url);
-    });
-
-    el('importBtn').addEventListener('click', ()=> el('importFile').click());
-    el('importFile').addEventListener('change', e=>{
-      const f = e.target.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = ev => {
-        try{ const arr = JSON.parse(ev.target.result); if(!Array.isArray(arr)) throw 0; posts = arr; save(); alert('تم الاستيراد.'); }catch(err){ alert('ملف غير صالح'); }
-      }; reader.readAsText(f);
-    });
-
-    // init
-    render();
+  // init
+  render();
   </script>
 </body>
 </html>
